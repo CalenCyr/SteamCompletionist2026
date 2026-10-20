@@ -653,3 +653,7 @@ div.statsChart {
 span.bold {
     font-weight:bold;
 }
+/* Header-image fallbacks are not 184x69; crop instead of stretching. */
+img.game_image {
+    object-fit: cover;
+}
