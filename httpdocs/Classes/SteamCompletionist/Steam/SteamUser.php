@@ -214,18 +214,13 @@ class SteamUser
 
             /** @var SteamGame $game */
 
-            if ($game->logoHash || $game->iconHash) {
-                if ($game->logoHash) {
-                    $logo = $game->logoHash;
-                } else {
-                    $logo = $game->iconHash;
-                }
-                if ($game->community) {
-                    $returnArray[$game->appId] = array('appid' => $game->appId, 'name' => $game->name, 'status' => $game->gameStatus, 'minutestotal' => $game->minutesTotal, 'minutes2weeks' => $game->minutes2Weeks, 'achievper' => $game->achievementPercentage, 'imagehash' => $logo, 'numowned' => $game->numOwned, 'numbeaten' => $game->numBeaten, 'numblacklisted' => $game->numBlacklisted);
-                } else {
-                    $returnArray[$game->appId] = array('appid' => $game->appId, 'name' => $game->name, 'status' => $game->gameStatus, 'minutestotal' => $game->minutesTotal, 'minutes2weeks' => $game->minutes2Weeks, 'imagehash' => $logo, 'numowned' => $game->numOwned, 'numbeaten' => $game->numBeaten, 'numblacklisted' => $game->numBlacklisted);
-                }
+            // Images no longer depend on Steam's logo/icon hashes, so every owned game is listed.
+            $images = $game->getImageUrls();
+            $entry = array('appid' => $game->appId, 'name' => $game->name, 'status' => $game->gameStatus, 'minutestotal' => $game->minutesTotal, 'minutes2weeks' => $game->minutes2Weeks, 'image' => array_shift($images), 'fallbacks' => implode('|', $images), 'numowned' => $game->numOwned, 'numbeaten' => $game->numBeaten, 'numblacklisted' => $game->numBlacklisted);
+            if ($game->community) {
+                $entry['achievper'] = $game->achievementPercentage;
             }
+            $returnArray[$game->appId] = $entry;
         }
         return $returnArray;
     }
@@ -257,7 +252,7 @@ class SteamUser
             $state = $this->personaState;
         }
         $returnArray['class'] = $this->getStatusClass($state);
-        $returnArray['avatar'] = 'http://media.steampowered.com/steamcommunity/public/images/avatars/' . substr($this->avatarHash, 0, 2) . '/' . $this->avatarHash . '.jpg';
+        $returnArray['avatar'] = 'https://avatars.akamai.steamstatic.com/' . $this->avatarHash . '.jpg';
         $returnArray['status'] = $this->getStatusString($state).$this->gameName;
         $returnArray['name'] = htmlentities(stripslashes($this->personaName));
         $returnArray['points'] = $this->points;
@@ -632,13 +627,13 @@ class SteamUser
      */
     public function loadLocalSlotGames()
     {
-        $this->db->prepare('SELECT a.`appid`, a.`minutesTotal`, a.`minutes2Weeks`, a.`minutesTotalStored`, a.`gameSlot`, a.`gameStatus`, a.`achievPer`, b.`name`, b.`community`, b.`logo`, b.`icon`, b.`owned`, b.`beaten`, b.`blacklisted` FROM `ownedGamesDB` AS a, `steamGameDB` AS b WHERE a.`appid` = b.`appid` AND a.`steamid` = ? AND a.`gameSlot` > 0');
+        $this->db->prepare('SELECT a.`appid`, a.`minutesTotal`, a.`minutes2Weeks`, a.`minutesTotalStored`, a.`gameSlot`, a.`gameStatus`, a.`achievPer`, b.`name`, b.`community`, b.`logo`, b.`icon`, b.`capsule`, b.`owned`, b.`beaten`, b.`blacklisted` FROM `ownedGamesDB` AS a, `steamGameDB` AS b WHERE a.`appid` = b.`appid` AND a.`steamid` = ? AND a.`gameSlot` > 0');
         $this->db->execute(array($this->steamId), 's');
         $result = $this->db->fetch();
         if ($result) {
             // Games Found
             do {
-                $this->games[$result['appid']] = new SteamGame($result['appid'], $this->config, $this->db, $this->logger, $this->util, $result['name'], $result['minutesTotal'], $result['minutes2Weeks'], $result['minutesTotalStored'], $result['gameSlot'], $result['gameStatus'], $result['achievPer'], $result['logo'], $result['icon'], $result['community'], $result['owned'], $result['beaten'], $result['blacklisted']);
+                $this->games[$result['appid']] = new SteamGame($result['appid'], $this->config, $this->db, $this->logger, $this->util, $result['name'], $result['minutesTotal'], $result['minutes2Weeks'], $result['minutesTotalStored'], $result['gameSlot'], $result['gameStatus'], $result['achievPer'], $result['logo'], $result['icon'], $result['community'], $result['owned'], $result['beaten'], $result['blacklisted'], $result['capsule']);
                 if ($result['gameSlot']) {
                     $this->slots[$result['gameSlot']] = $result['appid'];
                 }
@@ -655,12 +650,12 @@ class SteamUser
      */
     public function loadLocalGame($gameId)
     {
-        $this->db->prepare('SELECT a.`minutesTotal`, a.`minutes2Weeks`, a.`minutesTotalStored`, a.`gameSlot`, a.`gameStatus`, a.`achievPer`, b.`name`, b.`community`, b.`logo`, b.`icon`, b.`owned`, b.`beaten`, b.`blacklisted` FROM `ownedGamesDB` AS a, `steamGameDB` AS b WHERE a.`appid` = b.`appid` AND a.`steamid` = ? AND a.`appid` = ?');
+        $this->db->prepare('SELECT a.`minutesTotal`, a.`minutes2Weeks`, a.`minutesTotalStored`, a.`gameSlot`, a.`gameStatus`, a.`achievPer`, b.`name`, b.`community`, b.`logo`, b.`icon`, b.`capsule`, b.`owned`, b.`beaten`, b.`blacklisted` FROM `ownedGamesDB` AS a, `steamGameDB` AS b WHERE a.`appid` = b.`appid` AND a.`steamid` = ? AND a.`appid` = ?');
         $this->db->execute(array($this->steamId, $gameId), 'si');
         $result = $this->db->fetch();
 
         if ($result) {
-            $this->games[$gameId] = new SteamGame($gameId, $this->config, $this->db, $this->logger, $this->util, $result['name'], $result['minutesTotal'], $result['minutes2Weeks'], $result['minutesTotalStored'], $result['gameSlot'], $result['gameStatus'], $result['achievPer'], $result['logo'], $result['icon'], $result['community'], $result['owned'], $result['beaten'], $result['blacklisted']);
+            $this->games[$gameId] = new SteamGame($gameId, $this->config, $this->db, $this->logger, $this->util, $result['name'], $result['minutesTotal'], $result['minutes2Weeks'], $result['minutesTotalStored'], $result['gameSlot'], $result['gameStatus'], $result['achievPer'], $result['logo'], $result['icon'], $result['community'], $result['owned'], $result['beaten'], $result['blacklisted'], $result['capsule']);
             if ($result['gameSlot']) {
                 $this->slots[$result['gameSlot']] = $gameId;
             }
@@ -677,14 +672,14 @@ class SteamUser
      */
     public function loadLocalGames()
     {
-        $this->db->prepare('SELECT a.`appid`, a.`minutesTotal`, a.`minutes2Weeks`, a.`minutesTotalStored`, a.`gameSlot`, a.`gameStatus`, a.`achievPer`, b.`name`, b.`community`, b.`logo`, b.`icon`, b.`owned`, b.`beaten`, b.`blacklisted` FROM `ownedGamesDB` AS a, `steamGameDB` AS b WHERE a.`appid` = b.`appid` AND a.`steamid` = ? ORDER BY a.`minutes2Weeks` DESC, b.`name` ASC');
+        $this->db->prepare('SELECT a.`appid`, a.`minutesTotal`, a.`minutes2Weeks`, a.`minutesTotalStored`, a.`gameSlot`, a.`gameStatus`, a.`achievPer`, b.`name`, b.`community`, b.`logo`, b.`icon`, b.`capsule`, b.`owned`, b.`beaten`, b.`blacklisted` FROM `ownedGamesDB` AS a, `steamGameDB` AS b WHERE a.`appid` = b.`appid` AND a.`steamid` = ? ORDER BY a.`minutes2Weeks` DESC, b.`name` ASC');
         $this->db->execute(array($this->steamId), 's');
         $result = $this->db->fetch();
 
         if ($result) {
             // Games Found
             do {
-                $this->games[$result['appid']] = new SteamGame($result['appid'], $this->config, $this->db, $this->logger, $this->util, $result['name'], $result['minutesTotal'], $result['minutes2Weeks'], $result['minutesTotalStored'], $result['gameSlot'], $result['gameStatus'], $result['achievPer'], $result['logo'], $result['icon'], $result['community'], $result['owned'], $result['beaten'], $result['blacklisted']);
+                $this->games[$result['appid']] = new SteamGame($result['appid'], $this->config, $this->db, $this->logger, $this->util, $result['name'], $result['minutesTotal'], $result['minutes2Weeks'], $result['minutesTotalStored'], $result['gameSlot'], $result['gameStatus'], $result['achievPer'], $result['logo'], $result['icon'], $result['community'], $result['owned'], $result['beaten'], $result['blacklisted'], $result['capsule']);
                 if ($result['gameSlot']) {
                     $this->slots[$result['gameSlot']] = $result['appid'];
                 }
@@ -713,7 +708,8 @@ class SteamUser
         $gameData = null;
         $gameList = array();
 
-        $gameData = @json_decode($this->util->file_get_contents_curl('http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=' . $this->config['key'] . '&steamid=' . $this->steamId . '&include_appinfo=1&include_played_free_games=1&format=json'), true)['response'];
+        $gameData = @json_decode($this->util->file_get_contents_curl('http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=' . $this->config['key'] . '&steamid=' . $this->steamId . '&include_appinfo=1&include_played_free_games=1&skip_unvetted_apps=false&format=json'), true)['response'];
+        // skip_unvetted_apps=false: without it Steam silently omits "profile features limited" games from the list.
         $this->db->prepare('INSERT INTO `steamAPIUsage` SET `module` = 2');
         $this->db->execute();
 
@@ -730,6 +726,10 @@ class SteamUser
             $game['playtime_forever'] = isset($game['playtime_forever']) ? $game['playtime_forever'] : 0;
             $game['playtime_2weeks'] = isset($game['playtime_2weeks']) ? $game['playtime_2weeks'] : 0;
             $game['has_community_visible_stats'] = isset($game['has_community_visible_stats']) ? $game['has_community_visible_stats'] : false;
+            // Steam stopped returning img_logo_url, and limited games may lack an icon or even a name
+            $game['img_logo_url'] = isset($game['img_logo_url']) ? $game['img_logo_url'] : '';
+            $game['img_icon_url'] = isset($game['img_icon_url']) ? $game['img_icon_url'] : '';
+            $game['name'] = (isset($game['name']) && $game['name'] !== '') ? $game['name'] : 'App ' . $game['appid'];
 
             // If we previously loaded this game locally we can carry over some parameters
             if (isset($this->games[$game['appid']])) {
@@ -750,7 +750,8 @@ class SteamUser
                     $game['has_community_visible_stats'],
                     $this->games[$game['appid']]->numOwned,
                     $this->games[$game['appid']]->numBeaten,
-                    $this->games[$game['appid']]->numBlacklisted);
+                    $this->games[$game['appid']]->numBlacklisted,
+                    $this->games[$game['appid']]->capsulePath);
             } else {
                 $game = new SteamGame($game['appid'],
                     $this->config,
@@ -776,6 +777,8 @@ class SteamUser
             $gameList[$game->appId] = $game;
         }
 
+        $this->resolveCapsules($gameList);
+
         $removedGames = array_diff_key($this->games, $gameList);
 
         /** @var SteamGame $value */
@@ -789,6 +792,76 @@ class SteamUser
 
         $this->games = $gameList;
         $this->logger->addEntry('Retrieved game data from steam servers.');
+    }
+
+    /**
+     * Looks up store capsule paths for games that don't have one cached yet.
+     *
+     * Apps updated since 2024 keep their store art under hashed paths
+     * (store_item_assets/steam/apps/<appid>/<hash>/capsule_184x69.jpg), so the plain
+     * per-appid URL 404s for them. IStoreBrowseService/GetItems returns the real path.
+     * Results are cached in steamGameDB.capsule ('' when Steam has no store assets).
+     *
+     * @param array $games SteamGame objects keyed by appid.
+     */
+    public function resolveCapsules(array $games)
+    {
+        $pending = array();
+        foreach ($games as $game) {
+            /** @var SteamGame $game */
+            if ($game->capsulePath === null) {
+                $pending[(int)$game->appId] = $game;
+            }
+        }
+
+        foreach (array_chunk($pending, 100, true) as $chunk) {
+            $ids = array();
+            foreach (array_keys($chunk) as $appId) {
+                $ids[] = array('appid' => $appId);
+            }
+            $request = array(
+                'ids' => $ids,
+                'context' => array('language' => 'english', 'country_code' => 'US'),
+                'data_request' => array('include_assets' => true),
+            );
+
+            $response = @json_decode($this->util->file_get_contents_curl('https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?input_json=' . rawurlencode(json_encode($request))), true);
+            $this->db->prepare('INSERT INTO `steamAPIUsage` SET `module` = 4');
+            $this->db->execute();
+
+            if (!isset($response['response'])) {
+                // Request failed; leave these unresolved so the next refresh retries them.
+                $this->logger->addEntry('Capsule lookup failed for ' . count($chunk) . ' games.');
+                continue;
+            }
+
+            $items = isset($response['response']['store_items']) ? $response['response']['store_items'] : array();
+            $found = array();
+            foreach ($items as $item) {
+                if (!isset($item['appid'])) {
+                    continue;
+                }
+                $path = '';
+                if (isset($item['assets']['asset_url_format'])) {
+                    $assets = $item['assets'];
+                    $file = !empty($assets['small_capsule']) ? $assets['small_capsule'] : (!empty($assets['header']) ? $assets['header'] : '');
+                    if ($file) {
+                        $path = str_replace('${FILENAME}', $file, $assets['asset_url_format']);
+                    }
+                }
+                $found[(int)$item['appid']] = $path;
+            }
+
+            foreach ($chunk as $appId => $game) {
+                $path = isset($found[$appId]) ? $found[$appId] : '';
+                if (strlen($path) > 255) {
+                    $path = '';
+                }
+                $this->db->prepare('UPDATE `steamGameDB` SET `capsule` = ? WHERE `appid` = ?');
+                $this->db->execute(array($path, $appId), 'si');
+                $game->capsulePath = $path;
+            }
+        }
     }
 
 }

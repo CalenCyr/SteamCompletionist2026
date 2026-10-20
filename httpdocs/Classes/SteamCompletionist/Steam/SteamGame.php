@@ -122,6 +122,28 @@ class SteamGame
     public $numBlacklisted;
 
     /**
+     * Path of the game's 184x69 store capsule, relative to STORE_ASSET_BASE (e.g. "steam/apps/440/capsule_184x69.jpg?t=1").
+     * null = not resolved yet, '' = resolution attempted but Steam returned no store assets.
+     * @var string|null
+     */
+    public $capsulePath;
+
+    /**
+     * Base URL for store assets. Newer apps keep their art under hashed paths that are only reachable through here.
+     */
+    const STORE_ASSET_BASE = 'https://shared.akamai.steamstatic.com/store_item_assets/';
+
+    /**
+     * Base URL for community-hosted app images (icons and legacy logos).
+     */
+    const COMMUNITY_IMAGE_BASE = 'https://cdn.akamai.steamstatic.com/steamcommunity/public/images/apps/';
+
+    /**
+     * Shown when every other image source fails.
+     */
+    const PLACEHOLDER_IMAGE = '/img/no_capsule.svg';
+
+    /**
      * Constructor.
      *
      * @param $appId
@@ -142,9 +164,11 @@ class SteamGame
      * @param $numOwned
      * @param $numBeaten
      * @param $numBlacklisted
+     * @param string|null $capsulePath
      */
-    public function __construct($appId, $config, DatabaseInterface $db, LoggerInterface $logger, Util $util, $name, $minutesTotal, $minutes2Weeks, $minutesStored, $gameSlot, $gameStatus, $achievementPercentage, $logoHash, $iconHash, $community, $numOwned, $numBeaten, $numBlacklisted)
+    public function __construct($appId, $config, DatabaseInterface $db, LoggerInterface $logger, Util $util, $name, $minutesTotal, $minutes2Weeks, $minutesStored, $gameSlot, $gameStatus, $achievementPercentage, $logoHash, $iconHash, $community, $numOwned, $numBeaten, $numBlacklisted, $capsulePath = null)
     {
+        $this->capsulePath = $capsulePath;
         $this->appId = $appId;
         $this->config = $config;
         $this->db = $db;
@@ -163,6 +187,49 @@ class SteamGame
         $this->numOwned = $numOwned;
         $this->numBeaten = $numBeaten;
         $this->numBlacklisted = $numBlacklisted;
+    }
+
+    /**
+     * Returns candidate image URLs for this game, best first. The browser walks the list on load errors.
+     *
+     * Steam no longer returns img_logo_url from GetOwnedGames and the old community logo URLs 404,
+     * so the store capsule (exactly 184x69, the size of a game card) is used instead.
+     *
+     * @return array
+     */
+    public function getImageUrls()
+    {
+        $urls = array();
+
+        if ($this->capsulePath) {
+            $urls[] = self::STORE_ASSET_BASE . $this->capsulePath;
+        }
+
+        $urls[] = self::STORE_ASSET_BASE . 'steam/apps/' . $this->appId . '/capsule_184x69.jpg';
+        $urls[] = self::STORE_ASSET_BASE . 'steam/apps/' . $this->appId . '/header.jpg';
+
+        if ($this->logoHash) {
+            $urls[] = self::COMMUNITY_IMAGE_BASE . $this->appId . '/' . $this->logoHash . '.jpg';
+        }
+        if ($this->iconHash) {
+            $urls[] = self::COMMUNITY_IMAGE_BASE . $this->appId . '/' . $this->iconHash . '.jpg';
+        }
+
+        $urls[] = self::PLACEHOLDER_IMAGE;
+
+        return array_values(array_unique($urls));
+    }
+
+    /**
+     * Returns the src and data-fallbacks attributes for a game image tag.
+     *
+     * @return string
+     */
+    public function getImageAttributes()
+    {
+        $urls = $this->getImageUrls();
+        $src = array_shift($urls);
+        return 'src="' . htmlspecialchars($src) . '" data-fallbacks="' . htmlspecialchars(implode('|', $urls)) . '"';
     }
 
     /**
@@ -221,8 +288,12 @@ class SteamGame
      */
     public function saveGame($steamId)
     {
-        $this->db->prepare('INSERT INTO `steamGameDB` (`appid`, `name`, `community`, `logo`, `icon`) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE `name` = ?, `community` = ?, `logo` = ?, `icon` = ?');
-        $this->db->execute(array($this->appId, $this->name, $this->community, $this->logoHash, $this->iconHash, $this->name, $this->community, $this->logoHash, $this->iconHash), 'isisssiss');
+        // Steam no longer sends logo hashes (and sometimes no icon), so never overwrite a stored hash with an empty one.
+        $this->db->prepare('INSERT INTO `steamGameDB` (`appid`, `name`, `community`, `logo`, `icon`) VALUES (?, ?, ?, ?, ?)
+                            ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `community` = VALUES(`community`),
+                            `logo` = IF(VALUES(`logo`) = \'\', `logo`, VALUES(`logo`)),
+                            `icon` = IF(VALUES(`icon`) = \'\', `icon`, VALUES(`icon`))');
+        $this->db->execute(array($this->appId, $this->name, (int)$this->community, (string)$this->logoHash, (string)$this->iconHash), 'isiss');
 
         // Legacy code for storing the game logo locally
 //        if(!file_exists($this->logo) && $this->steamLogo)
@@ -247,7 +318,7 @@ class SteamGame
             $this->db->execute(array($steamId, $this->appId, $this->minutesTotal, $this->minutes2Weeks), 'siii');
 
             $this->db->prepare('UPDATE `steamGameDB` SET `owned` = `owned` + 1 WHERE appid = ?');
-            $this->db->execute(array($this->appId));
+            $this->db->execute(array($this->appId), 'i');
         }
     }
 

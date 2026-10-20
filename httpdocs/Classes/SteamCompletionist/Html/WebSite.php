@@ -242,15 +242,6 @@ class WebSite
                         if (isset($this->steamUser->slots[$x]) && $this->steamUser->slots[$x]) {
                             /** @var SteamGame $game */
                             $game = $this->steamUser->games[$this->steamUser->slots[$x]];
-                            $logo = 'http://media.steampowered.com/steamcommunity/public/images/apps/' . $game->appId . '/';
-                            if ($game->logoHash) {
-                                $logo .= $game->logoHash;
-                            } else {
-                                $logo .= $game->iconHash;
-                            }
-                            $logo .= '.jpg';
-
-
                             if ($game->gameStatus == 1) {
                                 $beaten .= ' beaten';
                             }  else if(!$game->minutesTotal) {
@@ -264,7 +255,7 @@ class WebSite
                             }
 
                             $string .= '<img class="game_image"
-                                                src="' . $logo . '"
+                                                ' . $game->getImageAttributes() . '
                                                 width="184" height="69"
                                                 alt="' . htmlentities(stripslashes($game->name)) . '"
                                                 data-gameid="' . $game->appId . '"
@@ -319,38 +310,27 @@ class WebSite
                             $disabled = ' blacklisted';
                         }
 
-                        // If the game has neither a logo nor a icon, it's probably a test app not meant to be played ( e.g. dota 2 test, X-Com PreOrder Bonus )
-                        if ($gameObject->logoHash || $gameObject->iconHash) {
-
-                            $logo = 'http://media.steampowered.com/steamcommunity/public/images/apps/' . $gameObject->appId . '/';
-                            if ($gameObject->logoHash) {
-                                $logo .= $gameObject->logoHash;
-                            } else {
-                                $logo .= $gameObject->iconHash;
-                            }
-                            $logo .= '.jpg';
-
-                            // Only attach data-achievper if it has community stats
-                            $achievements = '';
-                            if ($gameObject->community) {
-                                $achievements = 'data-achievper="' . $gameObject->achievementPercentage . '"';
-                            }
-
-                            echo '<div id="' . $gameObject->appId . '" class="list_box' . $disabled . '">
-                                    <img class="game_image"
-                                    src="' . $logo . '"
-                                    width="184" height="69"
-                                    alt="' . htmlentities(stripslashes($gameObject->name)) . '"
-                                    data-gameid="' . $gameObject->appId . '"
-                                    data-minutestotal="' . $gameObject->minutesTotal . '"
-                                    data-minutes2weeks="' . $gameObject->minutes2Weeks . '"
-                                    data-status="' . $gameObject->gameStatus . '"
-                                    data-numowned="' . $gameObject->numOwned . '"
-                                    data-numbeaten="' . $gameObject->numBeaten . '"
-                                    data-numblacklisted="' . $gameObject->numBlacklisted . '"
-                                    ' . $achievements . ' />
-                                 </div>';
+                        // Every owned game is listed; images come from the store CDN, not Steam's (now missing) logo hashes.
+                        // Only attach data-achievper if it has community stats
+                        $achievements = '';
+                        if ($gameObject->community) {
+                            $achievements = 'data-achievper="' . $gameObject->achievementPercentage . '"';
                         }
+
+                        echo '<div id="' . $gameObject->appId . '" class="list_box' . $disabled . '">
+                                <img class="game_image"
+                                ' . $gameObject->getImageAttributes() . '
+                                width="184" height="69"
+                                alt="' . htmlentities(stripslashes($gameObject->name)) . '"
+                                data-gameid="' . $gameObject->appId . '"
+                                data-minutestotal="' . $gameObject->minutesTotal . '"
+                                data-minutes2weeks="' . $gameObject->minutes2Weeks . '"
+                                data-status="' . $gameObject->gameStatus . '"
+                                data-numowned="' . $gameObject->numOwned . '"
+                                data-numbeaten="' . $gameObject->numBeaten . '"
+                                data-numblacklisted="' . $gameObject->numBlacklisted . '"
+                                ' . $achievements . ' />
+                             </div>';
                     }
 
                     // While the page is still in active development, display debug data at the bottom

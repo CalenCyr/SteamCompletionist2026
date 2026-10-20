@@ -63,6 +63,38 @@ String.prototype.getHHMM = function () {
 };
 
 // Used to display AJAX errors
+
+/**
+ * Escapes a string for use inside a double-quoted HTML attribute.
+ */
+function escapeAttr(value) {
+    return String(value === undefined || value === null ? '' : value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/**
+ * Game images carry a "|"-separated data-fallbacks list. When an image fails to load
+ * (e.g. a game with no store capsule), try the next URL. Image error events don't bubble,
+ * so listen in the capture phase to also cover cards added later via AJAX or cloned into slots.
+ */
+if (document.addEventListener) {
+    document.addEventListener('error', function (event) {
+        var img = event.target, fallbacks, next;
+        if (!img || img.tagName !== 'IMG' || !/(^|\s)game_image(\s|$)/.test(img.className)) {
+            return;
+        }
+        fallbacks = img.getAttribute('data-fallbacks');
+        if (!fallbacks) {
+            return;
+        }
+        fallbacks = fallbacks.split('|');
+        next = fallbacks.shift();
+        img.setAttribute('data-fallbacks', fallbacks.join('|'));
+        if (next) {
+            img.src = next;
+        }
+    }, true);
+}
+
 function errorMessage(message) {
     "use strict";
     $('#alert').html('<div class="ui-state-error ui-corner-all"><p class="state-title"><span class="ui-icon ui-icon-alert state-title-icon"></span>Sorry! Something went wrong..</p><p class="state-content">' + message + '</p></div>').dialog({
@@ -144,11 +176,8 @@ function loadData(mode, gameid, value, search) {
                         var game = $('#' + this.appid),
                             game_image;
                         if (!game.length) {
-                            if (this.achievper.length) {
-                                $('.list_boxes').prepend('<div id="' + this.appid + '" class="list_box"><img class="game_image" width="184" height="69" data-status="' + this.status + '" data-minutes2weeks="' + this.minutes2weeks + '" data-minutestotal="' + this.minutestotal + '" data-gameid="' + this.appid + '" alt="' + this.name + '" data-numowned="' + this.numowned + '" data-numbeaten="' + this.numbeaten + '" data-numblacklisted="' + this.numblacklisted + '" src="http://media.steampowered.com/steamcommunity/public/images/apps/' + this.appid + '/' + this.imagehash + '.jpg" data-achievper="' + this.achievper + '" /></div>');
-                            } else {
-                                $('.list_boxes').prepend('<div id="' + this.appid + '" class="list_box"><img class="game_image" width="184" height="69" data-status="' + this.status + '" data-minutes2weeks="' + this.minutes2weeks + '" data-minutestotal="' + this.minutestotal + '" data-gameid="' + this.appid + '" alt="' + this.name + '" data-numowned="' + this.numowned + '" data-numbeaten="' + this.numbeaten + '" data-numblacklisted="' + this.numblacklisted + '" src="http://media.steampowered.com/steamcommunity/public/images/apps/' + this.appid + '/' + this.imagehash + '.jpg"/></div>');
-                            }
+                            var achievAttr = (this.achievper !== undefined && this.achievper !== null) ? ' data-achievper="' + this.achievper + '"' : '';
+                            $('.list_boxes').prepend('<div id="' + this.appid + '" class="list_box"><img class="game_image" width="184" height="69" data-status="' + this.status + '" data-minutes2weeks="' + this.minutes2weeks + '" data-minutestotal="' + this.minutestotal + '" data-gameid="' + this.appid + '" alt="' + this.name + '" data-numowned="' + this.numowned + '" data-numbeaten="' + this.numbeaten + '" data-numblacklisted="' + this.numblacklisted + '" src="' + escapeAttr(this.image) + '" data-fallbacks="' + escapeAttr(this.fallbacks) + '"' + achievAttr + ' /></div>');
                             game.setListDrag();
                             //noinspection JSValidateTypes
                             game.children('.game_image').addTooltip();
